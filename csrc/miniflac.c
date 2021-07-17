@@ -1111,8 +1111,12 @@ luaminiflac_push_header(lua_State* L, luaminiflac_t* lFlac) {
         lua_pushstring(L,"metadata");
         lua_setfield(L,-2,"type");
     } else if(lFlac->flac.state == MINIFLAC_FRAME) {
+        lua_newtable(L);
+
         luaminiflac_push_frame_header(L,lFlac);
         lua_setfield(L,-2,"header");
+
+        lua_setfield(L,-2,"frame");
 
         lua_pushstring(L,"frame");
         lua_setfield(L,-2,"type");
@@ -1146,11 +1150,15 @@ luaminiflac_push_frame(lua_State* L, luaminiflac_t* lFlac) {
     lua_pushstring(L,"frame");
     lua_setfield(L,-2,"type");
 
+    lua_newtable(L);
+
     luaminiflac_push_frame_header(L,lFlac);
     lua_setfield(L,-2,"header");
 
     luaminiflac_push_frame_samples(L,lFlac);
     lua_setfield(L,-2,"samples");
+
+    lua_setfield(L,-2,"frame");
 }
 
 static int

@@ -19,6 +19,7 @@ build = {
         "csrc/miniflac.c",
       },
     },
+    ["miniflac.decoder"] = "src/miniflac/decoder.lua",
   }
 }
 

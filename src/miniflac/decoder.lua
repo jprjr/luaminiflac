@@ -20,7 +20,7 @@ local function decode_metadata_vorbis_comment(state)
 
   repeat
     vendor_string, err, state.data = state.decoder:vendor_string(state.data)
-    if err then return error(err) end
+    if err then return error('vendor_string: ' .. err) end
     if not vendor_string then
       data = yield(state.blocks)
       state.blocks = {}
@@ -33,7 +33,7 @@ local function decode_metadata_vorbis_comment(state)
 
   while true do
     comment_string, err, state.data = state.decoder:comment_string(state.data)
-    if err then return error(err) end
+    if err then return error('comment_string: ' .. err) end
     if not comment_string then --
       if #state.data == 0 then -- we got a MINIFLAC_CONTINUE
         data = yield(state.blocks)
@@ -57,7 +57,7 @@ local function decode_metadata_streaminfo(state)
 
   repeat
     streaminfo, err, state.data = state.decoder:streaminfo(state.data)
-    if err then return error(err) end
+    if err then return error('streaminfo: ' .. err) end
     if not streaminfo then
       data = yield(state.blocks)
       state.blocks = {}
@@ -85,7 +85,7 @@ local function decode_frame(state)
   local frame, err, data
   repeat
     frame, err, state.data = state.decoder:decode(state.data)
-    if err then return error(err) end
+    if err then return error('decode: ' .. err) end
     if not frame then
       data = yield(state.blocks)
       state.blocks = {}
@@ -125,7 +125,7 @@ local function decoder_create(typ)
 
     while true do
       state.cur, err, state.data = state.decoder:sync(state.data)
-      if err then return error(err) end
+      if err then return error('sync: ' .. err) end
       if not state.cur then
         data = yield(state.blocks)
         state.blocks = {}

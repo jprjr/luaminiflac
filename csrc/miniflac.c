@@ -1323,7 +1323,7 @@ luaminiflac_miniflac_streaminfo(lua_State *L) {
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
-    if(str == NULL || len == 0) {
+    if(str == NULL) {
         lua_pushnil(L);
         lua_pushinteger(L,MINIFLAC_ERROR);
         return 2;
@@ -1384,7 +1384,7 @@ luaminiflac_miniflac_vc_str_length(lua_State *L) {
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
-    if(str == NULL || len == 0) {
+    if(str == NULL) {
         lua_pushnil(L);
         lua_pushinteger(L,MINIFLAC_ERROR);
         return 2;
@@ -1463,7 +1463,7 @@ luaminiflac_miniflac_vc_str(lua_State *L) {
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
-    if(str == NULL || len == 0) {
+    if(str == NULL) {
         lua_pushnil(L);
         lua_pushinteger(L,MINIFLAC_ERROR);
         return 2;

@@ -43,7 +43,6 @@ int luaopen_miniflac(lua_State *L);
 
 /* compat funcs {{{ */
 #define luaminiflac_push_const(x) lua_pushinteger(L,MINIFLAC_ ## x) ; lua_setfield(L,-2, "MINIFLAC_" #x)
-#define luaminiflac_push_sconst(x) lua_pushinteger(L,MINIFLAC_ ## x) ; lua_setfield(L,-2, #x)
 
 #if (!defined LUA_VERSION_NUM) || LUA_VERSION_NUM == 501
 #define lua_setuservalue(L,i) lua_setfenv((L),(i))
@@ -98,6 +97,18 @@ static const char* const luaminiflac_digits          = "0123456789";
 static const char* const luaminiflac_int64_mt        = "miniflac_int64_t";
 static const char* const luaminiflac_uint64_mt       = "miniflac_uint64_t";
 static const char* const luaminiflac_mt     = "miniflac_t";
+
+static const char* const luaminiflac_metadata_strs[] = {
+    "unknown",
+    "streaminfo",
+    "padding",
+    "application",
+    "seektable",
+    "vorbis_comment",
+    "cuesheet",
+    "picture",
+    "invalid",
+};
 
 typedef struct luaminiflac_metamethods_s {
     const char *name;
@@ -1087,9 +1098,10 @@ luaminiflac_push_header(lua_State* L, luaminiflac_t* lFlac) {
 
     if(lFlac->flac.state == MINIFLAC_METADATA) {
         lua_newtable(L);
-        lua_pushinteger(L,lFlac->flac.metadata.header.type);
+
+        lua_pushstring(L,luaminiflac_metadata_strs[lFlac->flac.metadata.header.type]);
         lua_setfield(L,-2,"type");
-        lua_pushinteger(L,lFlac->flac.metadata.header.is_last);
+        lua_pushboolean(L,lFlac->flac.metadata.header.is_last);
         lua_setfield(L,-2,"is_last");
         lua_pushinteger(L,lFlac->flac.metadata.header.length);
         lua_setfield(L,-2,"length");
@@ -1607,6 +1619,18 @@ int luaopen_miniflac(lua_State *L) {
     luaminiflac_push_const(ITERATOR_END);
     lua_setfield(L,-2,"MINIFLAC_RESULT");
 
+    lua_newtable(L); /* MINIFLAC_METADATA_TYPE */
+    luaminiflac_push_const(METADATA_UNKNOWN);
+    luaminiflac_push_const(METADATA_STREAMINFO);
+    luaminiflac_push_const(METADATA_PADDING);
+    luaminiflac_push_const(METADATA_APPLICATION);
+    luaminiflac_push_const(METADATA_SEEKTABLE);
+    luaminiflac_push_const(METADATA_VORBIS_COMMENT);
+    luaminiflac_push_const(METADATA_CUESHEET);
+    luaminiflac_push_const(METADATA_PICTURE);
+    luaminiflac_push_const(METADATA_INVALID);
+    lua_setfield(L,-2,"MINIFLAC_METADATA_TYPE");
+
     luaminiflac_push_const(OGGHEADER);
     luaminiflac_push_const(STREAMMARKER_OR_FRAME);
     luaminiflac_push_const(STREAMMARKER);
@@ -1638,6 +1662,16 @@ int luaopen_miniflac(lua_State *L) {
     luaminiflac_push_const(CONTINUE);
     luaminiflac_push_const(OK);
     luaminiflac_push_const(ITERATOR_END);
+
+    luaminiflac_push_const(METADATA_UNKNOWN);
+    luaminiflac_push_const(METADATA_STREAMINFO);
+    luaminiflac_push_const(METADATA_PADDING);
+    luaminiflac_push_const(METADATA_APPLICATION);
+    luaminiflac_push_const(METADATA_SEEKTABLE);
+    luaminiflac_push_const(METADATA_VORBIS_COMMENT);
+    luaminiflac_push_const(METADATA_CUESHEET);
+    luaminiflac_push_const(METADATA_PICTURE);
+    luaminiflac_push_const(METADATA_INVALID);
 
     luaL_setfuncs(L,luaminiflac_functions,0);
 

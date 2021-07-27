@@ -11,6 +11,112 @@ local function decode_metadata_default()
   return true
 end
 
+local function decode_metadata_picture(state)
+  local err, data
+
+  local picture = {
+    type = nil,
+    mime = nil,
+    description = nil,
+    width = nil,
+    height = nil,
+    colordepth = nil,
+    totalcolors = nil,
+    data = nil,
+  }
+
+  repeat
+    picture.type, err, state.data = state.decoder:picture_type(state.data)
+    if err then return error('picture_type: ' .. err) end
+    if not picture.type then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.type
+
+  repeat
+    picture.mime, err, state.data = state.decoder:picture_mime_string(state.data)
+    if err then return error('picture_mime_string: ' .. err) end
+    if not picture.mime then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.mime
+
+  repeat
+    picture.description, err, state.data = state.decoder:picture_description_string(state.data)
+    if err then return error('picture_description_string: ' .. err) end
+    if not picture.description then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.description
+
+  repeat
+    picture.width, err, state.data = state.decoder:picture_width(state.data)
+    if err then return error('picture_width: ' .. err) end
+    if not picture.width then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.width
+
+  repeat
+    picture.height, err, state.data = state.decoder:picture_height(state.data)
+    if err then return error('picture_height: ' .. err) end
+    if not picture.height then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.height
+
+  repeat
+    picture.colordepth, err, state.data = state.decoder:picture_colordepth(state.data)
+    if err then return error('picture_colordepth: ' .. err) end
+    if not picture.colordepth then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.colordepth
+
+  repeat
+    picture.totalcolors, err, state.data = state.decoder:picture_totalcolors(state.data)
+    if err then return error('picture_totalcolors: ' .. err) end
+    if not picture.totalcolors then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.totalcolors
+
+  repeat
+    picture.data, err, state.data = state.decoder:picture_data(state.data)
+    if err then return error('picture_data_string: ' .. err) end
+    if not picture.data then
+      data = yield(state.blocks)
+      state.blocks = {}
+      if not data then return false end
+      state.data = state.data .. data
+    end
+  until picture.data
+
+  state.cur.metadata.picture = picture
+  return true
+end
+
 local function decode_metadata_vorbis_comment(state)
   local vendor_string, comment_string, err, data
 
@@ -77,7 +183,7 @@ local metadata_decoders = {
   seektable      = decode_metadata_default,
   vorbis_comment = decode_metadata_vorbis_comment,
   cuesheet       = decode_metadata_default,
-  picture        = decode_metadata_default,
+  picture        = decode_metadata_picture,
   invalid        = decode_metadata_default,
 }
 

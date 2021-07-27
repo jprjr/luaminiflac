@@ -1419,7 +1419,7 @@ luaminiflac_miniflac_vc_str_length(lua_State *L) {
     r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&output_length);
 
     switch(r) {
-        case MINIFLAC_ITERATOR_END: /* fall-through */
+        case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
@@ -1504,7 +1504,7 @@ luaminiflac_miniflac_vc_str(lua_State *L) {
                 lFlac->comment_flag = 1;
                 break;
             }
-            case MINIFLAC_ITERATOR_END: /* fall-through */
+            case MINIFLAC_METADATA_END: /* fall-through */
             case MINIFLAC_CONTINUE: {
                 lua_pushboolean(L,0);
                 lua_pushnil(L);
@@ -1525,7 +1525,7 @@ luaminiflac_miniflac_vc_str(lua_State *L) {
     r = strf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,(char *)lFlac->buffer,lFlac->buffer_len,&output_length);
 
     switch(r) {
-        case MINIFLAC_ITERATOR_END: /* fall-through */
+        case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
@@ -1624,7 +1624,7 @@ int luaopen_miniflac(lua_State *L) {
     luaminiflac_push_const(ERROR);
     luaminiflac_push_const(CONTINUE);
     luaminiflac_push_const(OK);
-    luaminiflac_push_const(ITERATOR_END);
+    luaminiflac_push_const(METADATA_END);
     lua_setfield(L,-2,"MINIFLAC_RESULT");
 
     lua_newtable(L); /* MINIFLAC_METADATA_TYPE */
@@ -1669,7 +1669,7 @@ int luaopen_miniflac(lua_State *L) {
     luaminiflac_push_const(ERROR);
     luaminiflac_push_const(CONTINUE);
     luaminiflac_push_const(OK);
-    luaminiflac_push_const(ITERATOR_END);
+    luaminiflac_push_const(METADATA_END);
 
     luaminiflac_push_const(METADATA_UNKNOWN);
     luaminiflac_push_const(METADATA_STREAMINFO);

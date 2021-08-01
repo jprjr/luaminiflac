@@ -121,14 +121,8 @@ function Decoder.decode_unknown()
 end
 
 function Decoder:decode_padding()
-  local padding = {
-    data = nil,
-  }
-
-  padding.data = self:padding()
-  if nil == padding.data then return false end
-  self.cur.metadata.padding = padding
-  return true
+  self.cur.metadata.padding = self:padding()
+  return nil ~= self.cur.metadata.padding
 end
 
 function Decoder:decode_seektable()

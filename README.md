@@ -118,7 +118,218 @@ decode(nil) -- tell the decoder we're done
 f:close()
 ```
 
-The coroutine will automatically put metadata blocks into tables for you.
+Each returned block is either an audio frame, or a metadata block. Here's
+details on the table structure for returned blocks.
+
+### Audio Frames
+
+The audio frame table structure is the same as the one returned
+by `miniflac_decode` or `miniflac_t:decode()`:
+
+```lua
+{
+  type = "frame",
+  frame = {
+    header = {
+      block_size = 4096,
+      blocking_strategy = 0,
+      bps = 16,
+      channel_assignment = 2,
+      channels = 2,
+      crc8 = 7,
+      frame_number = 124, -- will be sample_number if blocking_strategy == 1,
+                          -- in which case sample_number is a uint64_t userdata
+      sample_rate = 44100
+    },
+    samples = {
+      { 1, 2, 3, 4, ... } -- channel 1 samples,
+      { 1, 2, 3, 4, ... } -- channel 2 samples,
+      ...
+    },
+  }
+}
+```
+
+
+### Metadata Block: `STREAMINFO`
+
+```
+{
+  type = "metadata",
+  metadata = {
+    type = "streaminfo",
+    is_last = false,
+    length = 34, -- the raw length of the original metadata block, in bytes
+    streaminfo = {
+      min_block_size = 4096,
+      max_block_size = 4096,
+      min_frame_size = 14,
+      max_frame_size = 14066,
+      sample_rate = 44100,
+      channels = 2,
+      bps = 16,
+      total_samples = <uint64_t userdata>,
+      md5 = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+    }
+  }
+}
+```
+
+### Metadata Block: `PADDING`
+
+```lua
+{
+  type = "metadata",
+  metadata = {
+    type = "padding",
+    is_last = true,
+    length = 8192,
+    padding = "\0\0\0\0",
+  }
+}
+
+```
+
+### Metadata Block: `APPLICATION`
+
+```lua
+{
+  type = "metadata",
+  metadata = {
+    type = "application",
+    is_last = false,
+    length = 16,
+    application = {
+      data = "some-kind-of-data",
+      id = 1919510118
+    }
+  }
+}
+```
+
+### Metadata Block: `SEEKTABLE`
+
+```
+{
+  type = "metadata",
+  metadata = {
+    type = "seektable",
+    is_last = false,
+    length = 612,
+    seektable = {
+      seekpoints = {
+        {
+          sample_number = <uint64_t userdata>,
+          sample_offset = <uint64_t userndata>,
+          samples = 4096
+        },
+        {
+          sample_number = <uint64_t userdata>,
+          sample_offset = <uint64_t userdata>,
+          samples = 4096
+        },
+        ...
+      }
+    }
+  }
+}
+```
+
+### Metadata Block: `VORBIS_COMMENT`
+
+```lua
+{
+  type = "metadata",
+  metadata = {
+    type = "vorbis_comment",
+    is_last = false,
+    length = 40,
+    vorbis_comment = {
+      vendor_string = "reference libFLAC 1.3.3 20190804",
+      comments = {
+        "ALBUM=Some Album",
+        "ARTIST="Some Artist",
+      }
+    }
+  }
+}
+
+```
+
+### Metadata Block: `CUESHEET`
+
+```lua
+{
+  type = "metadata",
+  metadata = {
+    type = "cuesheet",
+    catalog = "12345678", -- if the catalog number is all zeros in the FLAC, this is nil
+    is_last = false,
+    length = 2064,
+    cuesheet = {
+      leadin = <uint64_t userdata>,
+      cd_flag = true,
+      tracks = {
+        {
+          offset = <uint64_t userdata>,
+          number = 1,
+          isrc = "12345678", -- if the ISRC is all zeros in the FLAC, this is nil
+          audio_flag = false,
+          preemph_flag = false,
+          indexpoints = {
+            {
+              number = 1,
+              offset = <uint64_t userdata>
+            }
+          },
+        },
+        {
+          offset = <uint64_t userdata>,
+          number = 2,
+          isrc = "12345678", -- if the ISRC is all zeros in the FLAC, this is nil
+          audio_flag = false,
+          preemph_flag = false
+          indexpoints = {
+            {
+              number = 1,
+              offset = <uint64_t userdata>
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Metadata Block: `PICTURE`
+
+```lua
+{
+  type = "metadata",
+  metadata = {
+    type = "picture",
+    is_last = false,
+    length = 510707,
+    picture = {
+      type = 3,
+      mime = "image/jpeg",
+      description = "",
+      width = 1416,
+      height = 1412,
+      colordepth = 24,
+      totalcolors = 0,
+      data = "binary-picture-data",
+    }
+  }
+}
+```
+
+## `uint64_t` userdata
+
+Some FLAC fields require representation larger than 32 bits, in this
+case they're represented with a custom userdata. The userdata has a
+metatable for addition, subtraction, `tostring`, etc.
 
 ## LICENSE
 

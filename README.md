@@ -54,7 +54,10 @@ repeat
           { 1, 2, 3, 4, ... } - channel 2 samples,
           ...
         },
-      },
+        footer = {
+          crc16 = 51652,
+        }
+      }
     ]]
     print('audio frame, block_size=' .. result.frame.header.block_size)
   elseif result.type == 'metadata' then
@@ -131,21 +134,24 @@ by `miniflac_decode` or `miniflac_t:decode()`:
   type = "frame",
   frame = {
     header = {
-      block_size = 4096,
       blocking_strategy = 0,
-      bps = 16,
+      block_size = 4096,
+      sample_rate = 44100,
       channel_assignment = 2,
       channels = 2,
-      crc8 = 7,
+      bps = 16,
       frame_number = 124, -- will be sample_number if blocking_strategy == 1,
                           -- in which case sample_number is a uint64_t userdata
-      sample_rate = 44100
+      crc8 = 7,
     },
     samples = {
       { 1, 2, 3, 4, ... } -- channel 1 samples,
       { 1, 2, 3, 4, ... } -- channel 2 samples,
       ...
-    },
+    }
+    footer = {
+      crc16 = 51652,
+    }
   }
 }
 ```

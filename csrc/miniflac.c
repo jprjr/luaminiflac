@@ -1134,6 +1134,13 @@ luaminiflac_push_frame_samples(lua_State* L, luaminiflac_t* lFlac) {
 }
 
 static void
+luaminiflac_push_frame_footer(lua_State* L, luaminiflac_t* lFlac) {
+    lua_newtable(L);
+    lua_pushinteger(L,lFlac->flac.frame.crc16);
+    lua_setfield(L,-2,"crc16");
+}
+
+static void
 luaminiflac_push_frame(lua_State* L, luaminiflac_t* lFlac) {
     lua_newtable(L);
 
@@ -1147,6 +1154,9 @@ luaminiflac_push_frame(lua_State* L, luaminiflac_t* lFlac) {
 
     luaminiflac_push_frame_samples(L,lFlac);
     lua_setfield(L,-2,"samples");
+
+    luaminiflac_push_frame_footer(L,lFlac);
+    lua_setfield(L,-2,"footer");
 
     lua_setfield(L,-2,"frame");
 }

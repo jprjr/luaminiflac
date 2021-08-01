@@ -1542,8 +1542,8 @@ static const luaminiflac_metamethods_t luaminiflac_miniflac_metamethods[] = {
     { "miniflac_picture_length",               "picture_length" },
     { "miniflac_picture_data",                 "picture_data" },
 
-    { "miniflac_cuesheet_catalog_length",    "cuesheet_catalog_length" },
-    { "miniflac_cuesheet_catalog_string",    "cuesheet_catalog_string" },
+    { "miniflac_cuesheet_catalog_length",      "cuesheet_catalog_length" },
+    { "miniflac_cuesheet_catalog_string",      "cuesheet_catalog_string" },
     { "miniflac_cuesheet_leadin",              "cuesheet_leadin" },
     { "miniflac_cuesheet_cd_flag",             "cuesheet_cd_flag" },
     { "miniflac_cuesheet_tracks",              "cuesheet_tracks" },
@@ -1565,6 +1565,9 @@ static const luaminiflac_metamethods_t luaminiflac_miniflac_metamethods[] = {
     { "miniflac_application_id",               "application_id" },
     { "miniflac_application_length",           "application_length" },
     { "miniflac_application_data",             "application_data" },
+
+    { "miniflac_padding_length",               "padding_length" },
+    { "miniflac_padding_data",                 "padding_data" },
 
     { NULL, NULL },
 };
@@ -1629,6 +1632,9 @@ static const luaminiflac_closures_t luaminiflac_closures[] = {
     LMF(application_id,uint32),
     LMF(application_length,uint32),
     LMF(application_data,str),
+
+    LMF(padding_length,uint32),
+    LMF(padding_data,str),
 
     { NULL, NULL, NULL },
 };

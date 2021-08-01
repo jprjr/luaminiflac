@@ -106,8 +106,10 @@ function Decoder:application()
   return self:application_data(len)
 end
 
-function Decoder.decode_padding()
-  return true
+function Decoder:padding()
+  local len = self:padding_length()
+  if nil == len then return nil end
+  return self:padding_data(len)
 end
 
 function Decoder.decode_invalid()
@@ -115,6 +117,17 @@ function Decoder.decode_invalid()
 end
 
 function Decoder.decode_unknown()
+  return true
+end
+
+function Decoder:decode_padding()
+  local padding = {
+    data = nil,
+  }
+
+  padding.data = self:padding()
+  if nil == padding.data then return false end
+  self.cur.metadata.padding = padding
   return true
 end
 

@@ -99,7 +99,6 @@ static const char* const luaminiflac_uint64_mt       = "miniflac_uint64_t";
 static const char* const luaminiflac_mt     = "miniflac_t";
 
 static const char* const luaminiflac_metadata_strs[] = {
-    "unknown",
     "streaminfo",
     "padding",
     "application",
@@ -108,6 +107,7 @@ static const char* const luaminiflac_metadata_strs[] = {
     "cuesheet",
     "picture",
     "invalid",
+    "unknown",
 };
 
 typedef struct luaminiflac_metamethods_s {
@@ -115,22 +115,26 @@ typedef struct luaminiflac_metamethods_s {
     const char *metaname;
 } luaminiflac_metamethods_t;
 
+typedef struct luaminiflac_closures_s {
+    void* f;
+    lua_CFunction l;
+    const char* name;
+} luaminiflac_closures_t;
+
 typedef struct luaminiflac_s {
     miniflac_t flac;
     int32_t samplebuf[8 * 65535];
     int32_t* samples[8];
     uint8_t* buffer;
     uint32_t buffer_len;
-    uint8_t  comment_flag;
-    uint32_t total_comments;
-    uint32_t current_comment;
-    uint8_t picture_flag;
-    uint32_t picture_len;
 } luaminiflac_t;
 
-typedef MINIFLAC_RESULT (*luaminiflac_comment_len_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint32_t* comment_length);
+typedef MINIFLAC_RESULT (*luaminiflac_uint8_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint8_t* value);
+typedef MINIFLAC_RESULT (*luaminiflac_uint16_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint16_t* value);
+typedef MINIFLAC_RESULT (*luaminiflac_uint32_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint32_t* value);
+typedef MINIFLAC_RESULT (*luaminiflac_uint64_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint64_t* value);
 
-typedef MINIFLAC_RESULT (*luaminiflac_comment_str_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, char* buffer, uint32_t buffer_length, uint32_t* buffer_used);
+typedef MINIFLAC_RESULT (*luaminiflac_str_func)(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint8_t* buffer, uint32_t buffer_length, uint32_t* buffer_used);
 
 /* uint64 and int64 {{{ */
 static char *
@@ -1035,37 +1039,6 @@ luaminiflac_expand_buffer(lua_State* L, int idx, luaminiflac_t *lFlac, uint32_t 
     lua_pop(L,1);
 }
 
-static void
-luaminiflac_pushstreaminfo(lua_State *L, miniflac_streaminfo_t* streaminfo) {
-    lua_newtable(L);
-
-    lua_pushinteger(L,streaminfo->min_block_size);
-    lua_setfield(L,-2,"min_block_size");
-
-    lua_pushinteger(L,streaminfo->max_block_size);
-    lua_setfield(L,-2,"max_block_size");
-
-    lua_pushinteger(L,streaminfo->min_frame_size);
-    lua_setfield(L,-2,"min_frame_size");
-
-    lua_pushinteger(L,streaminfo->max_frame_size);
-    lua_setfield(L,-2,"max_frame_size");
-
-    lua_pushinteger(L,streaminfo->sample_rate);
-    lua_setfield(L,-2,"sample_rate");
-
-    lua_pushinteger(L,streaminfo->channels);
-    lua_setfield(L,-2,"channels");
-
-    lua_pushinteger(L,streaminfo->bps);
-    lua_setfield(L,-2,"bps");
-
-    luaminiflac_pushuint64(L,streaminfo->total_samples);
-    lua_setfield(L,-2,"total_samples");
-
-    lua_pushlstring(L,(const char *)streaminfo->md5,16);
-    lua_setfield(L,-2,"md5");
-}
 
 static void
 luaminiflac_push_frame_header(lua_State* L, luaminiflac_t* lFlac) {
@@ -1096,12 +1069,27 @@ luaminiflac_push_frame_header(lua_State* L, luaminiflac_t* lFlac) {
 
 static void
 luaminiflac_push_header(lua_State* L, luaminiflac_t* lFlac) {
+    const char* metadata_type = NULL;
     lua_newtable(L);
 
     if(lFlac->flac.state == MINIFLAC_METADATA) {
         lua_newtable(L);
 
-        lua_pushstring(L,luaminiflac_metadata_strs[lFlac->flac.metadata.header.type]);
+        switch(lFlac->flac.metadata.header.type) {
+            case MINIFLAC_METADATA_INVALID: {
+                metadata_type = luaminiflac_metadata_strs[7];
+                break;
+            }
+            case MINIFLAC_METADATA_UNKNOWN: {
+                metadata_type = luaminiflac_metadata_strs[8];
+                break;
+            }
+            default: {
+                metadata_type = luaminiflac_metadata_strs[lFlac->flac.metadata.header.type];
+                break;
+            }
+        }
+        lua_pushstring(L,metadata_type);
         lua_setfield(L,-2,"type");
         lua_pushboolean(L,lFlac->flac.metadata.header.is_last);
         lua_setfield(L,-2,"is_last");
@@ -1189,11 +1177,6 @@ luaminiflac_miniflac_t(lua_State *L) {
 
     lFlac->buffer = NULL;
     lFlac->buffer_len = 0;
-    lFlac->comment_flag = 0;
-    lFlac->total_comments = 0;
-    lFlac->current_comment = 0;
-    lFlac->picture_flag = 0;
-    lFlac->picture_len = 0;
 
     miniflac_init(&lFlac->flac,(MINIFLAC_CONTAINER)container);
     luaL_setmetatable(L,luaminiflac_mt);
@@ -1284,7 +1267,7 @@ luaminiflac_miniflac_decode(lua_State *L) {
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        return luaL_error(L,"missing parameter data");
+        return luaL_error(L,"missing data");
     }
 
     r = miniflac_decode(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,(int32_t**)lFlac->samples);
@@ -1310,459 +1293,346 @@ luaminiflac_miniflac_decode(lua_State *L) {
     return 3;
 }
 
+/* closure for getting a uint8_t */
 static int
-luaminiflac_miniflac_streaminfo(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is an lua table */
-    luaminiflac_t *lFlac   = NULL;
-    const char *str = NULL;
-    size_t len = 0;
-    uint32_t used = 0;
-    miniflac_streaminfo_t streaminfo;
+luaminiflac_read_uint8(lua_State *L) {
+    luaminiflac_t *lFlac      = NULL;
+    const char* str           = NULL;
+    size_t      len           = 0;
+    uint32_t   used           = 0;
+    uint8_t     val           = 0;
+    luaminiflac_uint8_func f = NULL;
     MINIFLAC_RESULT r;
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
+        return luaL_error(L,"missing data");
     }
+    f = (luaminiflac_uint8_func)lua_touserdata(L,lua_upvalueindex(1));
 
-    r = miniflac_streaminfo(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&streaminfo);
+    r = f(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&val);
 
+    /* treat METADATA_END like CONTINUE, the coroutine interface tracks that we've
+     * read the right number of comments / bytes / whatever */
     switch(r) {
+        case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
         case MINIFLAC_OK: {
-            luaminiflac_pushstreaminfo(L,&streaminfo);
+            lua_pushinteger(L,val);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
-        default: break;
+        default: {
+            lua_pushnil(L);
+            lua_pushinteger(L,r);
+            break;
+        }
     }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
     lua_pushlstring(L,&str[used],len-used);
     return 3;
 }
 
-
-static
-MINIFLAC_RESULT
-luaminiflac_vendor_total(miniflac_t* pFlac, const uint8_t* data, uint32_t length, uint32_t* out_length, uint32_t* total_comments) {
-    (void)pFlac;
-    (void)data;
-    (void)length;
-    (void)out_length;
-    *total_comments = 1;
-    return MINIFLAC_OK;
-}
-
+/* closure for getting a uint16_t */
 static int
-luaminiflac_miniflac_vc_str_length(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is an integer */
-    luaminiflac_t *lFlac   = NULL;
-    const char* str        = NULL;
-    luaminiflac_comment_len_func lenf = NULL;
-    luaminiflac_comment_len_func totf = NULL;
-    size_t      len        = 0;
-    uint32_t   used        = 0;
-    uint32_t   used2       = 0;
-    uint32_t output_length = 0;
+luaminiflac_read_uint16(lua_State *L) {
+    luaminiflac_t *lFlac      = NULL;
+    const char* str           = NULL;
+    size_t      len           = 0;
+    uint32_t   used           = 0;
+    uint16_t    val           = 0;
+    luaminiflac_uint16_func f = NULL;
     MINIFLAC_RESULT r;
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
+        return luaL_error(L,"missing data");
     }
-    lenf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(1));
-    totf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(2));
+    f = (luaminiflac_uint16_func)lua_touserdata(L,lua_upvalueindex(1));
 
-    if(lFlac->total_comments == 0) {
-        r = totf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used2,&output_length);
-        switch(r) {
-            case MINIFLAC_OK: {
-                lFlac->total_comments = output_length;
-                break;
-            }
-            case MINIFLAC_CONTINUE: {
-                lua_pushboolean(L,0);
-                lua_pushnil(L);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-            default: {
-                lua_pushnil(L);
-                lua_pushinteger(L,r);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-        }
-        str = &str[used2];
-        len -= used2;
-    }
-
-    r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&output_length);
+    r = f(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&val);
 
     switch(r) {
         case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
         case MINIFLAC_OK: {
-            luaminiflac_expand_buffer(L,1,lFlac,output_length);
-            lFlac->comment_flag = 1;
-            lua_pushinteger(L,output_length);
+            lua_pushinteger(L,val);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
-        default: break;
+        default: {
+            lua_pushnil(L);
+            lua_pushinteger(L,r);
+            break;
+        }
     }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
     lua_pushlstring(L,&str[used],len-used);
     return 3;
 }
 
+/* closure for getting a uint32_t */
 static int
-luaminiflac_miniflac_vc_str(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is a string */
-    luaminiflac_t *lFlac   = NULL;
-    const char* str        = NULL;
-    luaminiflac_comment_len_func lenf = NULL;
-    luaminiflac_comment_len_func totf = NULL;
-    luaminiflac_comment_str_func strf = NULL;
-    size_t      len        = 0;
-    uint32_t   used        = 0;
-    uint32_t  used2        = 0;
-    uint32_t output_length = 0;
+luaminiflac_read_uint32(lua_State *L) {
+    luaminiflac_t *lFlac      = NULL;
+    const char* str           = NULL;
+    size_t      len           = 0;
+    uint32_t   used           = 0;
+    uint32_t    val           = 0;
+    luaminiflac_uint32_func f = NULL;
     MINIFLAC_RESULT r;
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
+        return luaL_error(L,"missing data");
     }
-    lenf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(1));
-    totf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(2));
-    strf = (luaminiflac_comment_str_func)lua_touserdata(L,lua_upvalueindex(3));
+    f = (luaminiflac_uint32_func)lua_touserdata(L,lua_upvalueindex(1));
 
-    if(lFlac->total_comments == 0) {
-        r = totf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used2,&output_length);
-        switch(r) {
-            case MINIFLAC_OK: {
-                lFlac->total_comments = output_length;
-                break;
-            }
-            case MINIFLAC_CONTINUE: {
-                lua_pushboolean(L,0);
-                lua_pushnil(L);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-            default: {
-                lua_pushnil(L);
-                lua_pushinteger(L,r);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-        }
-        str = &str[used2];
-        len -= used2;
-    }
-
-    if(!lFlac->comment_flag) {
-        r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used2,&output_length);
-        switch(r) {
-            case MINIFLAC_OK: {
-                luaminiflac_expand_buffer(L,1,lFlac,output_length);
-                lFlac->comment_flag = 1;
-                break;
-            }
-            case MINIFLAC_METADATA_END: /* fall-through */
-            case MINIFLAC_CONTINUE: {
-                lua_pushboolean(L,0);
-                lua_pushnil(L);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-            default: {
-                lua_pushnil(L);
-                lua_pushinteger(L,r);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-        }
-        str = &str[used2];
-        len -= used2;
-    }
-
-    r = strf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,(char *)lFlac->buffer,lFlac->buffer_len,&output_length);
+    r = f(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&val);
 
     switch(r) {
         case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
         case MINIFLAC_OK: {
-            lFlac->comment_flag = 0;
-            lFlac->current_comment++;
-            if(lFlac->current_comment == lFlac->total_comments) {
-                lFlac->current_comment = 0;
-            }
-            lua_pushlstring(L,(const char *)lFlac->buffer,output_length);
+            lua_pushinteger(L,val);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
-        default: break;
+        default: {
+            lua_pushnil(L);
+            lua_pushinteger(L,r);
+            break;
+        }
     }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
     lua_pushlstring(L,&str[used],len-used);
     return 3;
 }
 
-/* closure for getting one of the integer picture values (picture_type, width, etc) */
+/* closure for getting a uint64_t */
 static int
-luaminiflac_picture_int(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is a string */
-    luaminiflac_t *lFlac   = NULL;
-    const char* str        = NULL;
-    size_t      len        = 0;
-    uint32_t   used        = 0;
-    uint32_t output_length = 0;
-    luaminiflac_comment_len_func lenf = NULL;
+luaminiflac_read_uint64(lua_State *L) {
+    luaminiflac_t *lFlac      = NULL;
+    const char* str           = NULL;
+    size_t      len           = 0;
+    uint32_t   used           = 0;
+    uint64_t    val           = 0;
+    luaminiflac_uint64_func f = NULL;
     MINIFLAC_RESULT r;
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
+        return luaL_error(L,"missing data");
     }
-    lenf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(1));
+    f = (luaminiflac_uint64_func)lua_touserdata(L,lua_upvalueindex(1));
 
-    r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&output_length);
+    r = f(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&val);
 
     switch(r) {
         case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
         case MINIFLAC_OK: {
-            luaminiflac_expand_buffer(L,1,lFlac,output_length);
-            lFlac->comment_flag = 1;
-            lua_pushinteger(L,output_length);
+            luaminiflac_pushuint64(L,val);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
-        default: break;
+        default: {
+            lua_pushnil(L);
+            lua_pushinteger(L,r);
+            break;
+        }
     }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
     lua_pushlstring(L,&str[used],len-used);
     return 3;
 }
 
-/* closure for getting the length of a picture field (mime_string, description, data) */
+/* closure for getting a string */
 static int
-luaminiflac_picture_len(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is a string */
+luaminiflac_read_str(lua_State *L) {
     luaminiflac_t *lFlac   = NULL;
     const char* str        = NULL;
     size_t      len        = 0;
     uint32_t   used        = 0;
-    uint32_t output_length = 0;
-    luaminiflac_comment_len_func lenf = NULL;
+    uint32_t   maxlen      = 0;
+    luaminiflac_str_func f = NULL;
     MINIFLAC_RESULT r;
 
     lFlac = luaL_checkudata(L,1,luaminiflac_mt);
     str   = lua_tolstring(L,2,&len);
     if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
+        return luaL_error(L,"missing data");
     }
-    lenf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(1));
+    maxlen = luaL_optinteger(L,3,0);
+    f = (luaminiflac_str_func)lua_touserdata(L,lua_upvalueindex(1));
 
-    r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,&output_length);
+    luaminiflac_expand_buffer(L, 1, lFlac, maxlen);
+
+    r = f(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,lFlac->buffer,lFlac->buffer_len,&maxlen);
 
     switch(r) {
         case MINIFLAC_METADATA_END: /* fall-through */
         case MINIFLAC_CONTINUE: {
             lua_pushboolean(L,0);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
         case MINIFLAC_OK: {
-            luaminiflac_expand_buffer(L,1,lFlac,output_length);
-            lFlac->picture_flag = 1;
-            lFlac->picture_len = output_length;
-            lua_pushinteger(L,output_length);
+            lua_pushlstring(L,(const char *)lFlac->buffer,maxlen);
             lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
+            break;
         }
-        default: break;
+        default: {
+            lua_pushnil(L);
+            lua_pushinteger(L,r);
+            break;
+        }
     }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
     lua_pushlstring(L,&str[used],len-used);
     return 3;
-}
-
-/* closure for getting the data from a picture field (mime_string, description, data) */
-static int
-luaminiflac_picture_str(lua_State *L) {
-    /*
-     * returns result, err, rem
-     * on MINIFLAC_CONTINUE, result = false, rem is likely 0 bytes
-     * on error, result = nil and err is set
-     * err is only set on error, nil otherwise
-     * result is a string */
-    luaminiflac_t *lFlac   = NULL;
-    const char* str        = NULL;
-    size_t      len        = 0;
-    uint32_t   used        = 0;
-    uint32_t  used2        = 0;
-    uint32_t output_length = 0;
-    luaminiflac_comment_len_func lenf = NULL;
-    luaminiflac_comment_str_func strf = NULL;
-    MINIFLAC_RESULT r;
-
-    lFlac = luaL_checkudata(L,1,luaminiflac_mt);
-    str   = lua_tolstring(L,2,&len);
-    if(str == NULL) {
-        lua_pushnil(L);
-        lua_pushinteger(L,MINIFLAC_ERROR);
-        return 2;
-    }
-    lenf = (luaminiflac_comment_len_func)lua_touserdata(L,lua_upvalueindex(1));
-    strf = (luaminiflac_comment_str_func)lua_touserdata(L,lua_upvalueindex(2));
-
-    if(!lFlac->picture_flag) {
-        r = lenf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used2,&output_length);
-        switch(r) {
-            case MINIFLAC_OK: {
-                luaminiflac_expand_buffer(L,1,lFlac,output_length);
-                lFlac->picture_flag = 1;
-                break;
-            }
-            case MINIFLAC_METADATA_END: /* fall-through */
-            case MINIFLAC_CONTINUE: {
-                lua_pushboolean(L,0);
-                lua_pushnil(L);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-            default: {
-                lua_pushnil(L);
-                lua_pushinteger(L,r);
-                lua_pushlstring(L,&str[used2],len-used2);
-                return 3;
-            }
-        }
-        str = &str[used2];
-        len -= used2;
-    }
-
-    r = strf(&lFlac->flac,(const uint8_t*)str,(uint32_t)len,&used,(char *)lFlac->buffer,lFlac->buffer_len,&output_length);
-
-    switch(r) {
-        case MINIFLAC_METADATA_END: /* fall-through */
-        case MINIFLAC_CONTINUE: {
-            lua_pushboolean(L,0);
-            lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
-        }
-        case MINIFLAC_OK: {
-            lFlac->picture_flag = 0;
-            lua_pushlstring(L,(const char *)lFlac->buffer,output_length);
-            lua_pushnil(L);
-            lua_pushlstring(L,&str[used],len-used);
-            return 3;
-        }
-        default: break;
-    }
-    lua_pushnil(L);
-    lua_pushinteger(L,r);
-    lua_pushlstring(L,&str[used],len-used);
-    return 3;
-
 }
 
 static const luaminiflac_metamethods_t luaminiflac_miniflac_metamethods[] = {
     { "miniflac_init",          "init"   },
     { "miniflac_sync",          "sync"   },
     { "miniflac_decode",        "decode" },
-    { "miniflac_streaminfo",    "streaminfo" },
-    { "miniflac_vendor_length", "vendor_length" },
-    { "miniflac_vendor_string", "vendor_string" },
-    { "miniflac_comment_length", "comment_length" },
-    { "miniflac_comment_string", "comment_string" },
-    { "miniflac_picture_type",   "picture_type" },
-    { "miniflac_picture_mime_length",   "picture_mime_length" },
-    { "miniflac_picture_mime_string",   "picture_mime_string" },
+
+    { "miniflac_streaminfo_min_block_size",    "streaminfo_min_block_size" },
+    { "miniflac_streaminfo_max_block_size",    "streaminfo_max_block_size" },
+    { "miniflac_streaminfo_min_frame_size",    "streaminfo_min_frame_size" },
+    { "miniflac_streaminfo_max_frame_size",    "streaminfo_max_frame_size" },
+    { "miniflac_streaminfo_sample_rate",       "streaminfo_sample_rate" },
+    { "miniflac_streaminfo_channels",          "streaminfo_channels" },
+    { "miniflac_streaminfo_bps",               "streaminfo_bps" },
+    { "miniflac_streaminfo_total_samples",     "streaminfo_total_samples" },
+    { "miniflac_streaminfo_md5_length",        "streaminfo_md5_length" },
+    { "miniflac_streaminfo_md5_data",          "streaminfo_md5_data" },
+
+    { "miniflac_vorbis_comment_vendor_length", "vorbis_comment_vendor_length" },
+    { "miniflac_vorbis_comment_vendor_string", "vorbis_comment_vendor_string" },
+    { "miniflac_vorbis_comment_total",         "vorbis_comment_total" },
+    { "miniflac_vorbis_comment_length",        "vorbis_comment_length" },
+    { "miniflac_vorbis_comment_string",        "vorbis_comment_string" },
+
+    { "miniflac_picture_type",                 "picture_type" },
+    { "miniflac_picture_mime_length",          "picture_mime_length" },
+    { "miniflac_picture_mime_string",          "picture_mime_string" },
     { "miniflac_picture_description_length",   "picture_description_length" },
     { "miniflac_picture_description_string",   "picture_description_string" },
-    { "miniflac_picture_width",   "picture_width" },
-    { "miniflac_picture_height",   "picture_height" },
-    { "miniflac_picture_colordepth",   "picture_colordepth" },
-    { "miniflac_picture_totalcolors",   "picture_totalcolors" },
-    { "miniflac_picture_length",   "picture_length" },
-    { "miniflac_picture_data",   "picture_data" },
+    { "miniflac_picture_width",                "picture_width" },
+    { "miniflac_picture_height",               "picture_height" },
+    { "miniflac_picture_colordepth",           "picture_colordepth" },
+    { "miniflac_picture_totalcolors",          "picture_totalcolors" },
+    { "miniflac_picture_length",               "picture_length" },
+    { "miniflac_picture_data",                 "picture_data" },
+
+    { "miniflac_cuesheet_catalog_length",    "cuesheet_catalog_length" },
+    { "miniflac_cuesheet_catalog_string",    "cuesheet_catalog_string" },
+    { "miniflac_cuesheet_leadin",              "cuesheet_leadin" },
+    { "miniflac_cuesheet_cd_flag",             "cuesheet_cd_flag" },
+    { "miniflac_cuesheet_tracks",              "cuesheet_tracks" },
+    { "miniflac_cuesheet_track_offset",        "cuesheet_track_offset" },
+    { "miniflac_cuesheet_track_number",        "cuesheet_track_number" },
+    { "miniflac_cuesheet_track_isrc_length",   "cuesheet_track_isrc_length" },
+    { "miniflac_cuesheet_track_isrc_string",   "cuesheet_track_isrc_string" },
+    { "miniflac_cuesheet_track_audio_flag",    "cuesheet_track_audio_flag" },
+    { "miniflac_cuesheet_track_preemph_flag",  "cuesheet_track_preemph_flag" },
+    { "miniflac_cuesheet_track_indexpoints",   "cuesheet_track_indexpoints" },
+    { "miniflac_cuesheet_index_point_offset",  "cuesheet_index_point_offset" },
+    { "miniflac_cuesheet_index_point_number",  "cuesheet_index_point_number" },
+
+    { "miniflac_seektable_seekpoints",         "seektable_seekpoints" },
+    { "miniflac_seektable_sample_number",      "seektable_sample_number" },
+    { "miniflac_seektable_sample_offset",      "seektable_sample_offset" },
+    { "miniflac_seektable_samples",            "seektable_samples" },
+
+    { "miniflac_application_id",               "application_id" },
+    { "miniflac_application_length",           "application_length" },
+    { "miniflac_application_data",             "application_data" },
+
     { NULL, NULL },
 };
+
+#define LMF(a,t) { miniflac_ ## a, luaminiflac_read_ ## t, "miniflac_" #a }
+
+static const luaminiflac_closures_t luaminiflac_closures[] = {
+    /*
+    void* f;
+    lua_CFunction l;
+    const char* name;
+    */
+    LMF(streaminfo_min_block_size,uint16),
+    LMF(streaminfo_max_block_size,uint16),
+    LMF(streaminfo_min_frame_size,uint32),
+    LMF(streaminfo_max_frame_size,uint32),
+    LMF(streaminfo_sample_rate,uint32),
+    LMF(streaminfo_channels,uint8),
+    LMF(streaminfo_bps,uint8),
+    LMF(streaminfo_total_samples,uint64),
+    LMF(streaminfo_md5_length,uint32),
+    LMF(streaminfo_md5_data,str),
+
+    LMF(vorbis_comment_vendor_length,uint32),
+    LMF(vorbis_comment_vendor_string,str),
+    LMF(vorbis_comment_total,uint32),
+    LMF(vorbis_comment_length,uint32),
+    LMF(vorbis_comment_string,str),
+
+    LMF(picture_type,uint32),
+    LMF(picture_mime_length,uint32),
+    LMF(picture_mime_string,str),
+    LMF(picture_description_length,uint32),
+    LMF(picture_description_string,str),
+    LMF(picture_width,uint32),
+    LMF(picture_height,uint32),
+    LMF(picture_colordepth,uint32),
+    LMF(picture_totalcolors,uint32),
+    LMF(picture_length,uint32),
+    LMF(picture_data,str),
+
+    LMF(cuesheet_catalog_length,uint32),
+    LMF(cuesheet_catalog_string,str),
+    LMF(cuesheet_leadin,uint64),
+    LMF(cuesheet_cd_flag,uint8),
+    LMF(cuesheet_tracks,uint8),
+    LMF(cuesheet_track_offset,uint64),
+    LMF(cuesheet_track_number,uint8),
+    LMF(cuesheet_track_isrc_length,uint32),
+    LMF(cuesheet_track_isrc_string,str),
+    LMF(cuesheet_track_audio_flag,uint8),
+    LMF(cuesheet_track_preemph_flag,uint8),
+    LMF(cuesheet_track_indexpoints,uint8),
+    LMF(cuesheet_index_point_offset,uint64),
+    LMF(cuesheet_index_point_number,uint8),
+
+    LMF(seektable_seekpoints,uint32),
+    LMF(seektable_sample_number,uint64),
+    LMF(seektable_sample_offset,uint64),
+    LMF(seektable_samples,uint16),
+
+    LMF(application_id,uint32),
+    LMF(application_length,uint32),
+    LMF(application_data,str),
+
+    { NULL, NULL, NULL },
+};
+
 
 static const struct luaL_Reg luaminiflac_functions[] = {
     { "miniflac_int64_t",       luaminiflac_int64                  },
@@ -1771,13 +1641,14 @@ static const struct luaL_Reg luaminiflac_functions[] = {
     { "miniflac_init",          luaminiflac_miniflac_init          },
     { "miniflac_sync",          luaminiflac_miniflac_sync          },
     { "miniflac_decode",        luaminiflac_miniflac_decode        },
-    { "miniflac_streaminfo",    luaminiflac_miniflac_streaminfo    },
     { NULL,                     NULL                               },
 };
 
 LUAMINIFLAC_PUBLIC
 int luaopen_miniflac(lua_State *L) {
     const luaminiflac_metamethods_t *miniflac_mm = luaminiflac_miniflac_metamethods;
+    const luaminiflac_closures_t *miniflac_closures = luaminiflac_closures;
+    unsigned int i = 0;
 
     lua_newtable(L);
 
@@ -1884,75 +1755,12 @@ int luaopen_miniflac(lua_State *L) {
 
     luaL_setfuncs(L,luaminiflac_functions,0);
 
-    lua_pushlightuserdata(L,miniflac_vendor_length);
-    lua_pushlightuserdata(L,luaminiflac_vendor_total);
-    lua_pushcclosure(L,luaminiflac_miniflac_vc_str_length,2);
-    lua_setfield(L,-2,"miniflac_vendor_length");
-
-    lua_pushlightuserdata(L,miniflac_vendor_length);
-    lua_pushlightuserdata(L,luaminiflac_vendor_total);
-    lua_pushlightuserdata(L,miniflac_vendor_string);
-    lua_pushcclosure(L,luaminiflac_miniflac_vc_str,3);
-    lua_setfield(L,-2,"miniflac_vendor_string");
-
-    lua_pushlightuserdata(L,miniflac_comment_length);
-    lua_pushlightuserdata(L,miniflac_comments_total);
-    lua_pushcclosure(L,luaminiflac_miniflac_vc_str_length,2);
-    lua_setfield(L,-2,"miniflac_comment_length");
-
-    lua_pushlightuserdata(L,miniflac_comment_length);
-    lua_pushlightuserdata(L,miniflac_comments_total);
-    lua_pushlightuserdata(L,miniflac_comment_string);
-    lua_pushcclosure(L,luaminiflac_miniflac_vc_str,3);
-    lua_setfield(L,-2,"miniflac_comment_string");
-
-    lua_pushlightuserdata(L,miniflac_picture_type);
-    lua_pushcclosure(L,luaminiflac_picture_int,1);
-    lua_setfield(L,-2,"miniflac_picture_type");
-
-    lua_pushlightuserdata(L,miniflac_picture_mime_length);
-    lua_pushcclosure(L,luaminiflac_picture_len,1);
-    lua_setfield(L,-2,"miniflac_picture_mime_length");
-
-    lua_pushlightuserdata(L,miniflac_picture_mime_length);
-    lua_pushlightuserdata(L,miniflac_picture_mime_string);
-    lua_pushcclosure(L,luaminiflac_picture_str,2);
-    lua_setfield(L,-2,"miniflac_picture_mime_string");
-
-    lua_pushlightuserdata(L,miniflac_picture_description_length);
-    lua_pushcclosure(L,luaminiflac_picture_len,1);
-    lua_setfield(L,-2,"miniflac_picture_description_length");
-
-    lua_pushlightuserdata(L,miniflac_picture_description_length);
-    lua_pushlightuserdata(L,miniflac_picture_description_string);
-    lua_pushcclosure(L,luaminiflac_picture_str,2);
-    lua_setfield(L,-2,"miniflac_picture_description_string");
-
-    lua_pushlightuserdata(L,miniflac_picture_width);
-    lua_pushcclosure(L,luaminiflac_picture_int,1);
-    lua_setfield(L,-2,"miniflac_picture_width");
-
-    lua_pushlightuserdata(L,miniflac_picture_height);
-    lua_pushcclosure(L,luaminiflac_picture_int,1);
-    lua_setfield(L,-2,"miniflac_picture_height");
-
-    lua_pushlightuserdata(L,miniflac_picture_colordepth);
-    lua_pushcclosure(L,luaminiflac_picture_int,1);
-    lua_setfield(L,-2,"miniflac_picture_colordepth");
-
-    lua_pushlightuserdata(L,miniflac_picture_totalcolors);
-    lua_pushcclosure(L,luaminiflac_picture_int,1);
-    lua_setfield(L,-2,"miniflac_picture_totalcolors");
-
-    lua_pushlightuserdata(L,miniflac_picture_length);
-    lua_pushcclosure(L,luaminiflac_picture_len,1);
-    lua_setfield(L,-2,"miniflac_picture_length");
-
-    lua_pushlightuserdata(L,miniflac_picture_length);
-    lua_pushlightuserdata(L,miniflac_picture_data);
-    lua_pushcclosure(L,luaminiflac_picture_str,2);
-    lua_setfield(L,-2,"miniflac_picture_data");
-
+    while(miniflac_closures->f != NULL) {
+        lua_pushlightuserdata(L,miniflac_closures->f);
+        lua_pushcclosure(L,miniflac_closures->l,1);
+        lua_setfield(L,-2,miniflac_closures->name);
+        miniflac_closures++;
+    }
 
     luaL_newmetatable(L,luaminiflac_mt);
     lua_newtable(L); /* __index */
@@ -1964,7 +1772,15 @@ int luaopen_miniflac(lua_State *L) {
     lua_setfield(L,-2,"__index");
     lua_pop(L,1);
 
-    /* some convenience methods */
+    lua_newtable(L); /* our _metamethods table */
+    miniflac_mm = luaminiflac_miniflac_metamethods;
+    while(miniflac_mm->metaname != NULL) {
+        lua_pushstring(L,miniflac_mm->metaname);
+        lua_rawseti(L,-2,++i);
+        miniflac_mm++;
+    }
+    lua_setfield(L,-2,"_metamethods");
+
     lua_getfield(L,-1,"miniflac_int64_t");
     lua_setfield(L,-2,"int64_t");
 

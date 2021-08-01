@@ -153,7 +153,7 @@ by `miniflac_decode` or `miniflac_t:decode()`:
 
 ### Metadata Block: `STREAMINFO`
 
-```
+```lua
 {
   type = "metadata",
   metadata = {
@@ -209,7 +209,7 @@ by `miniflac_decode` or `miniflac_t:decode()`:
 
 ### Metadata Block: `SEEKTABLE`
 
-```
+```lua
 {
   type = "metadata",
   metadata = {
@@ -330,6 +330,12 @@ by `miniflac_decode` or `miniflac_t:decode()`:
 Some FLAC fields require representation larger than 32 bits, in this
 case they're represented with a custom userdata. The userdata has a
 metatable for addition, subtraction, `tostring`, etc.
+
+```lua
+local i = miniflac.uint64_t('9223372036854775806') -- creates a new userdata
+i = i + 1
+assert(tostring(i) == "9223372036854775807")
+```
 
 ## LICENSE
 

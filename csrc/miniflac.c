@@ -1050,7 +1050,12 @@ luaminiflac_push_frame_header(lua_State* L, luaminiflac_t* lFlac) {
     lua_setfield(L,-2,"block_size");
     lua_pushinteger(L,lFlac->flac.frame.header.sample_rate);
     lua_setfield(L,-2,"sample_rate");
-    lua_pushinteger(L,lFlac->flac.frame.header.channel_assignment);
+    switch(lFlac->flac.frame.header.channel_assignment) {
+        case MINIFLAC_CHASSGN_NONE: lua_pushstring(L,"independent"); break;
+        case MINIFLAC_CHASSGN_LEFT_SIDE: lua_pushstring(L,"left_side_stereo"); break;
+        case MINIFLAC_CHASSGN_RIGHT_SIDE: lua_pushstring(L,"right_side_stereo"); break;
+        case MINIFLAC_CHASSGN_MID_SIDE: lua_pushstring(L,"mid_side_stereo"); break;
+    }
     lua_setfield(L,-2,"channel_assignment");
     lua_pushinteger(L,lFlac->flac.frame.header.channels);
     lua_setfield(L,-2,"channels");

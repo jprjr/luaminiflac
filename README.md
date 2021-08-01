@@ -248,7 +248,7 @@ by `miniflac_decode` or `miniflac_t:decode()`:
       vendor_string = "reference libFLAC 1.3.3 20190804",
       comments = {
         "ALBUM=Some Album",
-        "ARTIST="Some Artist",
+        "ARTIST=Some Artist",
       }
     }
   }

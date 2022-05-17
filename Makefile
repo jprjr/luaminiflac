@@ -1,10 +1,11 @@
 .PHONY: release clean github-release
 
 PKGCONFIG = pkg-config
+LUA = lua
 CFLAGS = -Wall -Wextra -g -O0
-CFLAGS += $(shell $(PKGCONFIG) --cflags lua)
+CFLAGS += $(shell $(PKGCONFIG) --cflags $(LUA))
 
-VERSION = $(shell LUA_CPATH="./csrc/?.so" lua -e 'print(require("miniflac")._VERSION)')
+VERSION = $(shell LUA_CPATH="./csrc/?.so" $(LUA) -e 'print(require("miniflac")._VERSION)')
 
 lib: csrc/miniflac.so
 

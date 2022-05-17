@@ -2,7 +2,7 @@ package = "miniflac"
 version = "dev-1"
 
 source = {
-  url = "git+https://github.com/jprjr/luaogg.git"
+  url = "git+https://github.com/jprjr/luaminiflac.git"
 }
 
 description = {

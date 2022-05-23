@@ -16,7 +16,7 @@ github-release: lib
 	source $(HOME)/.github-token && github-release release \
 	  --user jprjr \
 	  --repo luaminiflac \
-	  --tag v$(VERSION)
+	  --tag v$(VERSION) || true
 	source $(HOME)/.github-token && github-release upload \
 	  --user jprjr \
 	  --repo luaminiflac \

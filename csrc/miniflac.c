@@ -1,5 +1,5 @@
 #define LUAMINIFLAC_VERSION_MAJOR 1
-#define LUAMINIFLAC_VERSION_MINOR 0
+#define LUAMINIFLAC_VERSION_MINOR 1
 #define LUAMINIFLAC_VERSION_PATCH 0
 #define STR(x) #x
 #define XSTR(x) STR(x)
@@ -39,6 +39,8 @@ int luaopen_miniflac(lua_State *L);
 #endif
 
 #define MINIFLAC_IMPLEMENTATION
+#define MINIFLAC_API
+#define MINIFLAC_PRIVATE static inline
 #include "miniflac/miniflac.h"
 
 /* compat funcs {{{ */

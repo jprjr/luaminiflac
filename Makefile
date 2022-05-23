@@ -35,8 +35,9 @@ release: lib
 	rm -rf dist/luaminiflac-$(VERSION)
 	rm -rf dist/luaminiflac-$(VERSION).tar.gz
 	rm -rf dist/luaminiflac-$(VERSION).tar.xz
-	mkdir -p dist/luaminiflac-$(VERSION)/csrc
-	rsync -a csrc/ dist/luaminiflac-$(VERSION)/csrc/
+	mkdir -p dist/luaminiflac-$(VERSION)/csrc/miniflac
+	rsync -a csrc/miniflac.c dist/luaminiflac-$(VERSION)/csrc/miniflac.c
+	rsync -a csrc/miniflac/miniflac.h dist/luaminiflac-$(VERSION)/csrc/miniflac/miniflac.h
 	rsync -a CMakeLists.txt dist/luaminiflac-$(VERSION)/CMakeLists.txt
 	rsync -a LICENSE dist/luaminiflac-$(VERSION)/LICENSE
 	rsync -a README.md dist/luaminiflac-$(VERSION)/README.md
